@@ -9,3 +9,4 @@ public interface HubEventHandler {
 
     void handle(BaseHubEvent hubEvent);
 }
+

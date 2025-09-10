@@ -5,75 +5,127 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import ru.yandex.practicum.kafka.telemetry.model.hub.events.BaseHubEvent;
-import ru.yandex.practicum.kafka.telemetry.model.hub.events.HubEventType;
 import ru.yandex.practicum.kafka.telemetry.model.sensors.SensorEvent;
-import ru.yandex.practicum.kafka.telemetry.model.sensors.SensorEventType;
-import ru.yandex.practicum.kafka.telemetry.service.handler.hub.HubEventHandler;
-import ru.yandex.practicum.kafka.telemetry.service.handler.sensors.SensorEventHandler;
+import ru.yandex.practicum.kafka.telemetry.service.handler.EventProcessingService;
 
-import java.util.Map;
-import java.util.Set;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
-@RequestMapping("/events") // Базовый путь для обоих эндпоинтов
+@RequestMapping("/events")
 public class CollectorController {
 
-    private final Map<HubEventType, HubEventHandler> hubEventHandlers;
-    private final Map<SensorEventType, SensorEventHandler> sensorEventHandlers;
+    private final EventProcessingService eventProcessingService;
     private final ObjectMapper objectMapper;
 
-    public CollectorController(Set<HubEventHandler> hubEventHandlers,
-                               Set<SensorEventHandler> sensorEventHandlers, ObjectMapper objectMapper) {
-
-        this.hubEventHandlers = hubEventHandlers.stream()
-                .collect(Collectors.toMap(HubEventHandler::getMessageType, Function.identity()));
-        this.sensorEventHandlers = sensorEventHandlers.stream()
-                .collect(Collectors.toMap(SensorEventHandler::getMessageType, Function.identity()));
+    public CollectorController(EventProcessingService eventProcessingService, ObjectMapper objectMapper) {
+        this.eventProcessingService = eventProcessingService;
         this.objectMapper = objectMapper;
     }
 
-        @PostMapping("/sensors")
-        public ResponseEntity<Void> collectSensorEvent(@Valid @RequestBody SensorEvent event) {
+    @PostMapping("/sensors")
+    public ResponseEntity<Void> collectSensorEvent(@Valid @RequestBody SensorEvent event) {
+        try {
+            log.info("Received sensor event: type={}, deviceId={}",
+                    event.getType(), event.getHubId());
 
-            try {
-                log.info(objectMapper.writeValueAsString(event));
-            } catch (JsonProcessingException e) {
-                log.error("Failed to serialize SensorEvent to JSON", e);
-            }
-
-            if (sensorEventHandlers.containsKey(event.getType())) {
-                sensorEventHandlers.get(event.getType()).handle(event);
-            } else {
-                throw new IllegalArgumentException("Can't find handler for " + event.getType());
-            }
-            return ResponseEntity.ok().build();
+            log.debug("Full sensor event data: {}", objectMapper.writeValueAsString(event));
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize SensorEvent to JSON", e);
         }
 
-
+        eventProcessingService.processSensorEvent(event);
+        return ResponseEntity.ok().build();
+    }
 
     @PostMapping("/hubs")
     public ResponseEntity<Void> collectHubEvent(@Valid @RequestBody BaseHubEvent event) {
-
         try {
-            log.info(objectMapper.writeValueAsString(event));
+            log.info("Received hub event: type={}, hubId={}",
+                    event.getType(), event.getHubId());
+
+            log.debug("Full hub event data: {}", objectMapper.writeValueAsString(event));
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize HubEvent to JSON", e);
-
         }
 
-        if (hubEventHandlers.containsKey(event.getType())) {
-            hubEventHandlers.get(event.getType()).handle(event);
-        } else {
-            throw new IllegalArgumentException("Can't find handler for " + event.getType());
-        }
+        eventProcessingService.processHubEvent(event);
         return ResponseEntity.ok().build();
     }
 }
+
+
+
+/*
+@Slf4j
+@RestController
+@RequestMapping("/events")
+public class CollectorController {
+
+    private final EventProcessingService eventProcessingService;
+    private final ObjectMapper objectMapper;
+
+    public CollectorController(EventProcessingService eventProcessingService, ObjectMapper objectMapper) {
+        this.eventProcessingService = eventProcessingService;
+        this.objectMapper = objectMapper;
+    }
+
+    @PostMapping("/sensors")
+    public ResponseEntity<Void> collectSensorEvent(@Valid @RequestBody SensorEvent event) {
+        try {
+            log.info("Received sensor event: type={}, deviceId={}",
+                    event.getType(), event.getHubId());
+
+            log.debug("Full sensor event data: {}", objectMapper.writeValueAsString(event));
+
+            eventProcessingService.processSensorEvent(event);
+            return ResponseEntity.ok().build();
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize SensorEvent to JSON", e);
+            return ResponseEntity.badRequest().build();
+        } catch (Exception e) {
+            log.error("Error processing sensor event", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @PostMapping("/hubs")
+    public ResponseEntity<Void> collectHubEvent(@Valid @RequestBody BaseHubEvent event) {
+        try {
+            log.info("Received hub event: type={}, hubId={}",
+                    event.getType(), event.getHubId());
+
+            log.debug("Full hub event data: {}", objectMapper.writeValueAsString(event));
+
+            eventProcessingService.processHubEvent(event);
+            return ResponseEntity.ok().build();
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize HubEvent to JSON", e);
+            return ResponseEntity.badRequest().build();
+        } catch (Exception e) {
+            log.error("Error processing hub event", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+}
+
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

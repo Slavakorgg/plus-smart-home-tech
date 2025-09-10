@@ -10,3 +10,4 @@ public interface SensorEventHandler {
     void handle(SensorEvent sensorEvent);
 
 }
+
