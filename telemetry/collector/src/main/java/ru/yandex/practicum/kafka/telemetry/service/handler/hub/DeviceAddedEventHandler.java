@@ -3,6 +3,7 @@ package ru.yandex.practicum.kafka.telemetry.service.handler.hub;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+
 import ru.yandex.practicum.kafka.telemetry.event.DeviceAddedEvent;
 import ru.yandex.practicum.kafka.telemetry.model.hub.events.DeviceAddedHubEvent;
 import ru.yandex.practicum.kafka.telemetry.model.hub.events.BaseHubEvent;

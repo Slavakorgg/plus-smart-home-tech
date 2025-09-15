@@ -1,3 +1,10 @@
+spring:
+  grpc:
+    server:
+      port: 9090
+      max-inbound-message-size: 8388608 # 8MB
+      max-header-list-size: 65536 # 64KB
+
 management:
   endpoints:
     web:
