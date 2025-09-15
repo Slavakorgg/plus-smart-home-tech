@@ -7,7 +7,7 @@ import ru.yandex.practicum.grpc.telemetry.event.TemperatureSensorProto;
 
 @Slf4j
 @Component
-public class TemperatureSensorEventHandler implements SensorEventHandler {
+public class TemperatureSensorEventGrpcHandler implements SensorEventGrpcHandler {
 
     @Override
     public SensorEventProto.PayloadCase getMessageType() {

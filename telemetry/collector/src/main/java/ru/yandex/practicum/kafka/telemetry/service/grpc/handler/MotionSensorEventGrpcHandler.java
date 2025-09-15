@@ -7,7 +7,7 @@ import ru.yandex.practicum.grpc.telemetry.event.SensorEventProto;
 
 @Slf4j
 @Component
-public class MotionSensorEventHandler implements SensorEventHandler {
+public class MotionSensorEventGrpcHandler implements SensorEventGrpcHandler {
 
     @Override
     public SensorEventProto.PayloadCase getMessageType() {
