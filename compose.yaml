@@ -34,11 +34,18 @@ services:
                              --bootstrap-server kafka:29092'"
     init: true
 
-
-  kafka-ui:
-    container_name: kafka-ui
-    image: provectuslabs/kafka-ui:latest
+  analyzer-db:
+    image: postgres:16.1
+    container_name: postgres-analyzer-db
     ports:
-      - "8088:8080"
+      - "5432:5432"
     environment:
-      DYNAMIC_CONFIG_ENABLED: 'true'
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+
+    healthcheck:
+      test: pg_isready -q -d $$POSTGRES_DB -U $$POSTGRES_USER
+      timeout: 5s
+      interval: 5s
+      retries: 10
