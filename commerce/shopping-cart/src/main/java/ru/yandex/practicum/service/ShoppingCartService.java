@@ -23,12 +23,8 @@ import ru.yandex.practicum.exception.warehouse.ProductInShoppingCartLowQuantityI
 import ru.yandex.practicum.logging.Logging;
 
 import java.time.Instant;
-import java.util.ConcurrentModificationException;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.*;
+
 
 @Slf4j
 @Service
@@ -37,173 +33,143 @@ public class ShoppingCartService {
 
     private final ShoppingCartRepository shoppingCartRepository;
     private final WarehouseClient warehouseClient;
-
     private final TransactionTemplate transactionTemplate;
 
-    // Добавить товар в корзину.
     @Logging
     @CachePut(value = "carts", key = "#username")
     @Retryable(
-            retryFor = {OptimisticLockException.class, ConcurrentModificationException.class},
+            retryFor = {OptimisticLockException.class},
             maxAttempts = 3,
             backoff = @Backoff(delay = 100, multiplier = 2)
     )
     public ShoppingCartDto addProductsToCart(String username, Map<String, Long> addProductMap) {
-        ShoppingCartDto checkCartDto = new ShoppingCartDto();
-        checkCartDto.setShoppingCartId("no-matter-but-not-blank");
-        List<ShoppingCart> activeCarts1 = shoppingCartRepository.findByUsernameAndIsActiveOrderByCreatedAtDesc(username, true);
-
-        boolean savedIsEmpty = activeCarts1.isEmpty();
-        Long savedVersion = savedIsEmpty ? null : activeCarts1.getFirst().getVersion();
-        String savedShoppingCartId = savedIsEmpty ? null : activeCarts1.getFirst().getShoppingCartId();
-
-        if (activeCarts1.isEmpty()) {
-            checkCartDto.setProducts(addProductMap);
-        } else {
-            Map<String, Long> allProductMap = Stream.concat(
-                    activeCarts1.getFirst().getProducts().entrySet().stream(),
-                    addProductMap.entrySet().stream()
-            ).collect(Collectors.toMap(
-                    Map.Entry::getKey,
-                    Map.Entry::getValue,
-                    Long::sum
-            ));
-            checkCartDto.setProducts(allProductMap);
-        }
-
-        try {
-            warehouseClient.checkShoppingCart(checkCartDto);
-        } catch (FeignException.UnprocessableEntity e) {
-            throw new ProductInShoppingCartLowQuantityInWarehouseException(e.getMessage());
-        }
-
         return transactionTemplate.execute(status -> {
-            List<ShoppingCart> activeCarts2 = shoppingCartRepository.findByUsernameAndIsActiveOrderByCreatedAtDesc(username, true);
+            // Получаем активную корзину (предполагаем, что она существует)
+            List<ShoppingCart> activeCarts = shoppingCartRepository
+                    .findByUsernameAndIsActiveOrderByCreatedAtDesc(username, true);
+
             ShoppingCart cart;
-            if (activeCarts2.isEmpty()) {
-                if (!savedIsEmpty)
-                    throw new ConcurrentModificationException("Active cart deleted during method execution");
+            if (activeCarts.isEmpty()) {
                 cart = new ShoppingCart();
                 cart.setUsername(username);
                 cart.setIsActive(true);
-                cart.setProducts(addProductMap);
+                cart.setProducts(new HashMap<>(addProductMap));
                 cart.setCreatedAt(Instant.now());
             } else {
-                cart = activeCarts2.getFirst();
-                if (savedIsEmpty || !Objects.equals(savedVersion, cart.getVersion())
-                        || !Objects.equals(savedShoppingCartId, cart.getShoppingCartId()))
-                    throw new ConcurrentModificationException("Active cart changed during method execution");
-                for (Map.Entry<String, Long> addProduct : addProductMap.entrySet()) {
-                    if (cart.getProducts().containsKey(addProduct.getKey())) {
-                        Long sum = cart.getProducts().get(addProduct.getKey()) + addProduct.getValue();
-                        cart.getProducts().put(addProduct.getKey(), sum);
-                    } else {
-                        cart.getProducts().put(addProduct.getKey(), addProduct.getValue());
-                    }
+                cart = activeCarts.getFirst();
+                // Объединяем продукты
+                Map<String, Long> updatedProducts = new HashMap<>(cart.getProducts());
+                for (Map.Entry<String, Long> entry : addProductMap.entrySet()) {
+                    updatedProducts.merge(entry.getKey(), entry.getValue(), Long::sum);
                 }
+                cart.setProducts(updatedProducts);
             }
+
+            // Проверяем наличие товаров на складе
+            ShoppingCartDto checkDto = new ShoppingCartDto();
+            checkDto.setProducts(cart.getProducts());
+            try {
+                warehouseClient.checkShoppingCart(checkDto);
+            } catch (FeignException.UnprocessableEntity e) {
+                throw new ProductInShoppingCartLowQuantityInWarehouseException(e.getMessage());
+            }
+
+            // Сохраняем — Hibernate проверит версию автоматически
             shoppingCartRepository.save(cart);
             return ShoppingCartMapper.toDto(cart);
         });
     }
 
-    // Удалить указанные товары из корзины пользователя.
     @Logging
     @CachePut(value = "carts", key = "#username")
-    @Transactional(readOnly = false)
+    @Transactional
     public ShoppingCartDto removeProductsFromCart(String username, List<String> removeProductList) {
-        List<ShoppingCart> activeCarts = shoppingCartRepository.findByUsernameAndIsActiveOrderByCreatedAtDesc(username, true);
+        List<ShoppingCart> activeCarts = shoppingCartRepository
+                .findByUsernameAndIsActiveOrderByCreatedAtDesc(username, true);
 
-        if (activeCarts.isEmpty())
-            throw new NoActiveShoppingCartException("No active shopping carts are found for user = " + username);
-
-        ShoppingCart cart = activeCarts.getFirst();
-        boolean noProductsInCart = removeProductList.stream()
-                .anyMatch(p -> !cart.getProducts().containsKey(p));
-
-        if (noProductsInCart) {
-            String errorMsg = removeProductList.stream()
-                    .filter(p -> !cart.getProducts().containsKey(p))
-                    .map(p -> p + "; ")
-                    .reduce(new StringBuilder("No products in cart: "), StringBuilder::append, StringBuilder::append)
-                    .toString();
-            throw new NoProductsInShoppingCartException(errorMsg);
+        if (activeCarts.isEmpty()) {
+            throw new NoActiveShoppingCartException("No active shopping carts for user: " + username);
         }
 
-        for (String removeProductId : removeProductList) cart.getProducts().remove(removeProductId);
+        ShoppingCart cart = activeCarts.getFirst();
+        for (String productId : removeProductList) {
+            if (!cart.getProducts().containsKey(productId)) {
+                throw new NoProductsInShoppingCartException("Product not in cart: " + productId);
+            }
+            cart.getProducts().remove(productId);
+        }
+
         shoppingCartRepository.save(cart);
         return ShoppingCartMapper.toDto(cart);
     }
 
-    // Изменить количество товаров в корзине.
     @Logging
     @CachePut(value = "carts", key = "#username")
     @Retryable(
-            retryFor = {OptimisticLockException.class, ConcurrentModificationException.class},
+            retryFor = {OptimisticLockException.class},
             maxAttempts = 3,
             backoff = @Backoff(delay = 100, multiplier = 2)
     )
     public ShoppingCartDto changeProductQuantity(String username, ChangeProductQuantityRequest request) {
-        List<ShoppingCart> activeCarts1 = shoppingCartRepository.findByUsernameAndIsActiveOrderByCreatedAtDesc(username, true);
-        if (activeCarts1.isEmpty())
-            throw new NoActiveShoppingCartException("No active shopping carts are found for user = " + username);
-        ShoppingCart cart1 = activeCarts1.getFirst();
-
-        if (!cart1.getProducts().containsKey(request.getProductId()))
-            throw new NoProductsInShoppingCartException("No product in cart: " + request.getProductId());
-
-        Long savedVersion = cart1.getVersion();
-        String savedShoppingCartId = cart1.getShoppingCartId();
-
-        ShoppingCartDto checkCartDto = new ShoppingCartDto();
-        checkCartDto.setShoppingCartId("no-matter-but-not-blank");
-        checkCartDto.setProducts(Map.of(request.getProductId(), request.getNewQuantity()));
-        try {
-            warehouseClient.checkShoppingCart(checkCartDto);
-        } catch (FeignException.UnprocessableEntity e) {
-            throw new ProductInShoppingCartLowQuantityInWarehouseException(e.getMessage());
-        }
-
         return transactionTemplate.execute(status -> {
-            List<ShoppingCart> activeCarts2 = shoppingCartRepository.findByUsernameAndIsActiveOrderByCreatedAtDesc(username, true);
-            if (activeCarts2.isEmpty())
-                throw new ConcurrentModificationException("Active cart deleted during method execution");
-            ShoppingCart cart2 = activeCarts2.getFirst();
-            if (!Objects.equals(savedVersion, cart2.getVersion())
-                    || !Objects.equals(savedShoppingCartId, cart2.getShoppingCartId()))
-                throw new ConcurrentModificationException("Active cart changed during method execution");
-            cart2.getProducts().put(request.getProductId(), request.getNewQuantity());
-            shoppingCartRepository.save(cart2);
-            return ShoppingCartMapper.toDto(cart2);
+            List<ShoppingCart> activeCarts = shoppingCartRepository
+                    .findByUsernameAndIsActiveOrderByCreatedAtDesc(username, true);
+
+            if (activeCarts.isEmpty()) {
+                throw new NoActiveShoppingCartException("No active shopping carts for user: " + username);
+            }
+
+            ShoppingCart cart = activeCarts.getFirst();
+            if (!cart.getProducts().containsKey(request.getProductId())) {
+                throw new NoProductsInShoppingCartException(
+                        "Product not in cart: " + request.getProductId()
+                );
+            }
+
+            // Обновляем количество
+            cart.getProducts().put(request.getProductId(), request.getNewQuantity());
+
+            // Проверяем остатки на складе
+            ShoppingCartDto checkDto = new ShoppingCartDto();
+            checkDto.setProducts(Map.of(request.getProductId(), request.getNewQuantity()));
+            try {
+                warehouseClient.checkShoppingCart(checkDto);
+            } catch (FeignException.UnprocessableEntity e) {
+                throw new ProductInShoppingCartLowQuantityInWarehouseException(e.getMessage());
+            }
+
+            // Сохраняем — Hibernate проверит версию
+            shoppingCartRepository.save(cart);
+            return ShoppingCartMapper.toDto(cart);
         });
     }
 
-    // Деактивация корзины товаров для пользователя.
     @Logging
     @CacheEvict(value = "carts", key = "#username")
-    @Transactional(readOnly = false)
+    @Transactional
     public String deactivateCart(String username) {
         shoppingCartRepository.deactivateByUsername(username);
         return "true";
     }
 
-    // Получить актуальную корзину для авторизованного пользователя.
     @Logging
     @Cacheable(value = "carts", key = "#username")
-    @Transactional(readOnly = false)
+    @Transactional(readOnly = true)
     public ShoppingCartDto getCartByUsername(String username) {
-        List<ShoppingCart> activeCarts = shoppingCartRepository.findByUsernameAndIsActiveOrderByCreatedAtDesc(username, true);
+        List<ShoppingCart> activeCarts = shoppingCartRepository
+                .findByUsernameAndIsActiveOrderByCreatedAtDesc(username, true);
+
         ShoppingCart cart;
         if (activeCarts.isEmpty()) {
             cart = new ShoppingCart();
             cart.setUsername(username);
             cart.setIsActive(true);
             cart.setCreatedAt(Instant.now());
+            cart.setProducts(new HashMap<>());
             shoppingCartRepository.save(cart);
         } else {
             cart = activeCarts.getFirst();
         }
         return ShoppingCartMapper.toDto(cart);
     }
-
 }
