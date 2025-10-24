@@ -3,7 +3,6 @@ package ru.yandex.practicum.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
-import ru.yandex.practicum.client.payment.OrderClient;
 import ru.yandex.practicum.client.payment.ShoppingStoreClient;
 import ru.yandex.practicum.dal.Payment;
 import ru.yandex.practicum.dal.PaymentRepository;
@@ -19,7 +18,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Map;
-import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -32,14 +30,16 @@ public class PaymentService {
     private final PaymentStateFailPoller paymentStateFailPoller;
 
     private final ShoppingStoreClient shoppingStoreClient;
-    private final OrderClient orderClient;
 
     // Формирование оплаты для заказа (переход в платежный шлюз).
     // просто создаем новый Payment и гипотетически пересылаем данные в платежную систему
     public PaymentDto makePaymentForOrder(OrderDto orderDto) {
         PaymentDto paymentDto = transactionTemplate.execute(status -> {
-            Optional<Payment> optionalPayment = paymentRepository.findByOrderId(orderDto.getOrderId());
-            if (optionalPayment.isPresent()) return optionalPayment.get().toDto();         // idempotency
+            Payment oldPayment = paymentRepository.findByOrderId(orderDto.getOrderId());
+
+            if (oldPayment != null) {
+                return oldPayment.toDto();
+            }
 
             Payment payment = new Payment();
             payment.setOrderId(orderDto.getOrderId());
@@ -93,7 +93,7 @@ public class PaymentService {
     // просто меняем статус Payment и дергаем поллер чтобы он переслал данные в другие сервисы
     public void successfulPaymentForOrder(String orderId) {
         transactionTemplate.execute(status -> {
-            Payment payment = paymentRepository.findByOrderId(orderId).orElseThrow(
+            Payment payment = paymentRepository.findByOrderIdOptional(orderId).orElseThrow(
                     () -> new NoPaymentFoundException("Not found payment for order " + orderId)
             );
             payment.setPaymentState(PaymentState.SUCCESS);
@@ -109,7 +109,7 @@ public class PaymentService {
     // аналог предыдущего, но с другим статусом
     public void failedPaymentForOrder(String orderId) {
         transactionTemplate.execute(status -> {
-            Payment payment = paymentRepository.findByOrderId(orderId).orElseThrow(
+            Payment payment = paymentRepository.findByOrderIdOptional(orderId).orElseThrow(
                     () -> new NoPaymentFoundException("Not found payment for order " + orderId)
             );
             payment.setPaymentState(PaymentState.FAIL);

@@ -7,9 +7,9 @@ import java.util.Optional;
 
 public interface PaymentRepository extends JpaRepository<Payment, String> {
 
-    Optional<Payment> findByOrderId(String orderId);
+    Optional<Payment> findByOrderIdOptional(String orderId);
 
-    boolean existsByOrderId(String orderId);
+    Payment findByOrderId(String orderId);
 
     // METHODS FOR POLLERS
 
