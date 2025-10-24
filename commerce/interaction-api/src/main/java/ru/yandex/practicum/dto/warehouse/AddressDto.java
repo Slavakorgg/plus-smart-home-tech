@@ -2,24 +2,24 @@ package ru.yandex.practicum.dto.warehouse;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import lombok.Data;
+import lombok.Builder;
 
-@Data
-public class AddressDto {
+@Builder
+public record AddressDto (
 
-    @NotBlank
-    private String country;
+        @NotBlank
+        String country,
 
-    @NotBlank
-    private String city;
+        @NotBlank
+        String city,
 
-    @NotBlank
-    private String street;
+        @NotBlank
+        String street,
 
-    @NotBlank
-    private String house;
+        @NotBlank
+        String house,
 
-    @NotNull
-    private String flat;
+        @NotNull
+        String flat
 
-}
+) {}
