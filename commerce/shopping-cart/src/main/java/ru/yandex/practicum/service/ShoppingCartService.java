@@ -12,7 +12,7 @@ import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import ru.yandex.practicum.client.WarehouseClient;
+import ru.yandex.practicum.client.cart.WarehouseClient;
 import ru.yandex.practicum.dal.ShoppingCart;
 import ru.yandex.practicum.dal.ShoppingCartRepository;
 import ru.yandex.practicum.dto.cart.ChangeProductQuantityRequest;
