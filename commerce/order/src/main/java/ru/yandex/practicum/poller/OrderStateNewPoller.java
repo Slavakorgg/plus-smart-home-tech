@@ -3,7 +3,7 @@ package ru.yandex.practicum.poller;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
-import ru.yandex.practicum.client.WarehouseClient;
+import ru.yandex.practicum.client.order.WarehouseClient;
 import ru.yandex.practicum.dal.FromAddress;
 import ru.yandex.practicum.dal.FromAddressRepository;
 import ru.yandex.practicum.dal.Order;
