@@ -1,4 +1,4 @@
-package ru.yandex.practicum.client;
+package ru.yandex.practicum.client.cart;
 
 import feign.FeignException;
 import feign.RetryableException;

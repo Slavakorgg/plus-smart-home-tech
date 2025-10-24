@@ -5,7 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.retry.annotation.EnableRetry;
-import ru.yandex.practicum.client.WarehouseClient;
+import ru.yandex.practicum.client.cart.WarehouseClient;
 
 @EnableCaching
 @EnableRetry

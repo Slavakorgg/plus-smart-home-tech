@@ -3,7 +3,7 @@ package ru.yandex.practicum.poller;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
-import ru.yandex.practicum.client.OrderClient;
+import ru.yandex.practicum.client.payment.OrderClient;
 import ru.yandex.practicum.dal.Payment;
 import ru.yandex.practicum.dal.PaymentRepository;
 import ru.yandex.practicum.dto.payment.PaymentState;
